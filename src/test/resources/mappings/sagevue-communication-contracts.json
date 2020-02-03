@@ -1,0 +1,58 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/biampsagevue/api/login",
+        "bodyPatterns": [
+          {
+            "equalToJson": "{\"credentials\":{\"userName\": \"Admin\", \"password\": \"1234\", \"rememberMe\": \"false\"}}"
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"LoginId\":\"ea7a6606-30b6-4b39-afb4-d6f171a650db\",\"Role\":\"Administrator\"}",
+        "headers": {
+          "Content-Type": "text/plain"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/biampsagevue/api/systems",
+        "headers": {
+          "SessionID": {
+            "equalTo": "ea7a6606-30b6-4b39-afb4-d6f171a650db"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"Systems\":[{\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"Devices\":[{\"Model\":\"FORTE_VT\",\"ModelDescription\":\"TesiraFORT\u00C9 AVB VT\",\"SystemDescription\":\"TesiraFORT\u00C9 AVB-VT - Default Configuration 03275657\",\"FirmwareVersion\":\"3.3.0.18\",\"OccupiedStatus\":\"\",\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"\",\"IsProtected\":false,\"Faults\":[],\"Status\":0,\"Labels\":[]}],\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"TesiraFORT\u00C9 AVB-VT - Default Configuration 03275657\",\"IsProtected\":false,\"Faults\":[],\"Status\":0,\"Labels\":[]}],\"Errors\":[]}",
+        "headers": {
+          "Content-Type": "text/plain"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/biampsagevue/api/devices",
+        "headers": {
+          "SessionID": {
+            "equalTo": "ea7a6606-30b6-4b39-afb4-d6f171a650db"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"TesiraDevices\":[{\"Model\":\"FORTE_VT\",\"ModelDescription\":\"TesiraFORT\u00C9 AVB VT\",\"SystemDescription\":\"TesiraFORT\u00C9 AVB-VT - Default Configuration 03275657\",\"FirmwareVersion\":\"3.3.0.18\",\"OccupiedStatus\":\"\",\"AssetGroupId\":\"4a7a071b-7331-4849-b842-516bae6f395d\",\"IsControlled\":false,\"SystemId\":\"03275657\",\"SerialNumber\":\"03275657\",\"HostName\":\"TesiraForte03275657\",\"Description\":\"\",\"IsProtected\":false,\"Faults\":[],\"Status\":0,\"Labels\":[]}],\"TesiraErrors\":[],\"DevioDevices\":[],\"DevioErrors\":[],\"AtomDevices\":[],\"AtomErrors\":[],\"DynasoundDevices\":[],\"DynasoundErrors\":[],\"QtProDevices\":[],\"QtProErrors\":[]}",
+        "headers": {
+          "Content-Type": "text/plain"
+        }
+      }
+    }
+  ]
+}

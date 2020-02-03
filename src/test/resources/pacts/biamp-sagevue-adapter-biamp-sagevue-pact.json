@@ -1,0 +1,129 @@
+{
+  "consumer": {
+    "name": "biamp-sagevue-adapter"
+  },
+  "provider": {
+    "name": "biamp-sagevue"
+  },
+  "interactions": [
+    {
+      "description": "POST /biampsagevue/api/login -> 200",
+      "request": {
+        "method": "POST",
+        "path": "/biampsagevue/api/login",
+        "headers": {
+          "authorization": "Basic QWRtaW46MTIzNA==",
+          "content-type": "application/json"
+        },
+        "body": {
+          "credentials": {
+            "password": "1234",
+            "rememberMe": "false",
+            "userName": "Admin"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/plain"
+        },
+        "body": {
+          "LoginId": "ea7a6606-30b6-4b39-afb4-d6f171a650db",
+          "Role": "Administrator"
+        },
+        "matchingRules": {
+          "$.body": {
+            "match": "type"
+          }
+        }
+      }
+    },
+    {
+      "description": "POST /biampsagevue/api/login -> 200",
+      "request": {
+        "method": "POST",
+        "path": "/biampsagevue/api/login",
+        "headers": {
+          "authorization": "Basic QWRtaW46MTIzNA==",
+          "content-type": "application/json"
+        },
+        "body": {
+          "credentials": {
+            "password": "1234",
+            "rememberMe": "false",
+            "userName": "Admin"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/plain"
+        },
+        "body": {
+          "LoginId": "ea7a6606-30b6-4b39-afb4-d6f171a650db",
+          "Role": "Administrator"
+        },
+        "matchingRules": {
+          "$.body": {
+            "match": "type"
+          }
+        }
+      }
+    },
+    {
+      "description": "GET /biampsagevue/api/systems -> 200",
+      "request": {
+        "method": "GET",
+        "path": "/biampsagevue/api/systems",
+        "headers": {
+          "authorization": "Basic QWRtaW46MTIzNA==",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/plain"
+        },
+        "body": {
+          "Systems": [
+            {
+              "AssetGroupId": "4a7a071b-7331-4849-b842-516bae6f395d",
+              "IsControlled": false,
+              "Devices": [
+                {
+                  "Model": "FORTE_VT",
+                  "ModelDescription": "TesiraFORTÉ AVB VT",
+                  "SystemDescription": "TesiraFORTÉ AVB-VT - Default Configuration 03275657",
+                  "FirmwareVersion": "3.3.0.18",
+                  "OccupiedStatus": "",
+                  "AssetGroupId": "4a7a071b-7331-4849-b842-516bae6f395d",
+                  "IsControlled": false,
+                  "SystemId": "03275657",
+                  "SerialNumber": "03275657",
+                  "HostName": "TesiraForte03275657",
+                  "Description": "",
+                  "IsProtected": false,
+                  "Faults": [],
+                  "Status": 0,
+                  "Labels": []
+                }
+              ],
+              "SystemId": "03275657",
+              "SerialNumber": "03275657",
+              "HostName": "TesiraForte03275657",
+              "Description": "TesiraFORTÉ AVB-VT - Default Configuration 03275657",
+              "IsProtected": false,
+              "Faults": [],
+              "Status": 0,
+              "Labels": []
+            }
+          ],
+          "Errors": []
+        }
+      }
+    }
+  ]
+}
