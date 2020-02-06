@@ -11,8 +11,6 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.util.CollectionUtils;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
@@ -26,7 +24,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
     private ReentrantLock telnetOperationsLock = new ReentrantLock();
     private boolean isInReboot = false;
-    private String adapterVersion;
     /*
     *
     * */
@@ -38,8 +35,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         this.setCommandErrorList(Arrays.asList("% Invalid input detected at '^' marker."));
         this.setLoginSuccessList(Collections.singletonList(">"));
         this.setOptionHandlers(Collections.singletonList(new EchoOptionHandler(true, true, true ,false)));
-
-        adapterVersion = fetchAdapterVersion();
     }
 
     /**/
@@ -190,8 +185,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
             statisticsMap.putAll(environmentStatus);
             statisticsMap.putAll(portControlledProperties);
-            statisticsMap.put("Version", adapterVersion);
-
             statistics.setStatistics(statisticsMap);
             statistics.setControl(portControls);
         } finally {
@@ -199,19 +192,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             telnetOperationsLock.unlock();
         }
         return Collections.singletonList(statistics);
-    }
-
-    private String fetchAdapterVersion(){
-        final Properties properties = new Properties();
-        try {
-            InputStream versionProperties = getClass().getResourceAsStream("/version.properties");
-
-            properties.load(versionProperties);
-        } catch (IOException e) {
-            logger.error("Unable to find version.properties file. Falling back to 1.0.0-SNAPSHOT");
-            return "1.0.0-SNAPSHOT";
-        }
-        return properties.getProperty("adapter.version");
     }
 
     private void reloadStack() {
