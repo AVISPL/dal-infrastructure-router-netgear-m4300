@@ -172,25 +172,30 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
             String ipManagementData = internalSend("show ip management");
             String poeData = internalSend("show poe");
+            String interfaceSwitchport = internalSend("show interface switchport");
             String environmentData = fetchPaginatedResponse("show environment");
+            String interfacesPacketData = fetchPaginatedResponse("show interface ethernet all | exclude lag");
             String ports = fetchPaginatedResponse("show port status all | exclude lag");
 
             statisticsMap.putAll(extractTelnetResponseProperties(ipManagementData, "\\.{2,}"));
             statisticsMap.putAll(extractTelnetResponseProperties(poeData, "\\.{2,}"));
 
-            LinkedHashMap<String, String> activePortData = new LinkedHashMap<>();
-            extractPortData(activePortData, ports);
+            Map<String, String> activePortData = new HashMap<>();
+            extractPortStatus(activePortData, ports);
 
-            LinkedHashMap<String, String> interfacesData = new LinkedHashMap<>();
-            fetchInterfaceData(interfacesData, new ArrayList<>(activePortData.keySet()));
+            Map<String, String> packetsData = new HashMap<>();
+            extractGeneralPacketsData(packetsData, interfaceSwitchport);
 
-            LinkedHashMap<String, String> portControls = new LinkedHashMap<>();
+            Map<String, String> interfacesData = new HashMap<>();
+            fetchInterfaceData(interfacesData, interfacesPacketData);
+
+            Map<String, String> portControls = new HashMap<>();
             generatePortControls(portControls, activePortData);
 
-            LinkedHashMap<String, String> portControlledProperties = new LinkedHashMap<>();
+            Map<String, String> portControlledProperties = new HashMap<>();
             generatePortControlledProperties(portControlledProperties, activePortData);
 
-            LinkedHashMap<String, String> environmentStatus = new LinkedHashMap<>();
+            Map<String, String> environmentStatus = new HashMap<>();
             extractEnvironmentStatus(environmentStatus, environmentData);
 
             portControls.putAll(createControls());
@@ -199,6 +204,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             statisticsMap.putAll(environmentStatus);
             statisticsMap.putAll(portControlledProperties);
             statisticsMap.putAll(interfacesData);
+            statisticsMap.putAll(packetsData);
             statistics.setStatistics(statisticsMap);
             statistics.setControl(portControls);
         } finally {
@@ -209,19 +215,26 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return Collections.singletonList(statistics);
     }
 
-    private void fetchInterfaceData(LinkedHashMap<String, String> interfacesData, List<String> interfaceIds) throws Exception {
-        if(!enableTelnet()){
-            return;
-        }
+    private void extractGeneralPacketsData(Map<String, String> packetsData, String interfaceSwitchport) {
+        Map<String, String> result = extractTelnetResponseProperties(interfaceSwitchport, "\\.{2,}");
+        packetsData.put("TotalPacketsStatistics#Total Packets Received Without Errors", result.get("Packets Received Without Error"));
+        packetsData.put("TotalPacketsStatistics#Total Packets Transmitted Without Errors", result.get("Packets Transmitted Without Errors"));
+        packetsData.put("TotalPacketsStatistics#Total Packets Received With Errors", result.get("Packets Received With Error"));
+        packetsData.put("TotalPacketsStatistics#Total Packets Transmitted With Errors", result.get("Transmit Packet Errors"));
+        packetsData.put("TotalPacketsStatistics#Time Since Counters Last Cleared", result.get("Time Since Counters Last Cleared"));
+    }
 
-        for(String s : interfaceIds){
-            String interfaceResponse = internalSend("show interface " + s + "\nshow ip interface " + s);
-            Map<String, String> interfaceResponseProperties = extractTelnetResponseProperties(interfaceResponse, "\\.{2,}");
+    private void fetchInterfaceData(Map<String, String> interfacesData, String packetsData) throws Exception {
+        extractPortStatistics(interfacesData, packetsData);
 
-            interfacesData.put("Packet Success#Port " + s, interfaceResponseProperties.get("Packets Received Without Error"));
-            interfacesData.put("Packet Loss#Port " + s, interfaceResponseProperties.get("Packets Received With Error"));
-            interfacesData.put("Packet Bandwidth#Port " + s, interfaceResponseProperties.get("Bandwidth"));
-        }
+//        for(String s : interfaceIds){
+//            String interfaceResponse = internalSend("show interface " + s + "\nshow ip interface " + s);
+//            Map<String, String> interfaceResponseProperties = extractTelnetResponseProperties(interfaceResponse, "\\.{2,}");
+//
+//            interfacesData.put("Packet Success#Port " + s, interfaceResponseProperties.get("Packets Received Without Error"));
+//            interfacesData.put("Packet Loss#Port " + s, interfaceResponseProperties.get("Packets Received With Error"));
+//            interfacesData.put("Packet Bandwidth#Port " + s, interfaceResponseProperties.get("Bandwidth"));
+//        }
     }
 
     private void reloadStack() {
@@ -268,7 +281,8 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             telnetResponseStringBuilder.append(response);
             response = internalSend("-");
         } while (!response.endsWith("#"));
-        disconnect();
+
+        destroyChannel();
         return telnetResponseStringBuilder.append(response).toString();
     }
 
@@ -278,18 +292,18 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return controls;
     }
 
-    private void generatePortControls(LinkedHashMap<String, String> portControls, Map<String, String> portsMap){
+    private void generatePortControls(Map<String, String> portControls, Map<String, String> portsMap){
         portsMap.keySet().forEach(s -> portControls.put("Port Controls#Port " + s, "Toggle"));
     }
 
-    private void generatePortControlledProperties(LinkedHashMap<String, String> portControls, Map<String, String> portsMap){
+    private void generatePortControlledProperties(Map<String, String> portControls, Map<String, String> portsMap){
         portsMap.keySet().forEach(s -> portControls.put("Port Controls#Port " + s, portsMap.get(s)));
     }
 
-    private void extractEnvironmentStatus(LinkedHashMap<String, String> environmentStatus, String environmentData){
-        LinkedHashMap<String, String> temp = new LinkedHashMap<>();
-        LinkedHashMap<String, String> fans = new LinkedHashMap<>();
-        LinkedHashMap<String, String> power = new LinkedHashMap<>();
+    private void extractEnvironmentStatus(Map<String, String> environmentStatus, String environmentData){
+        Map<String, String> temp = new HashMap<>();
+        Map<String, String> fans = new HashMap<>();
+        Map<String, String> power = new HashMap<>();
 
         int mode = 0;
         for (String s : environmentData.split("\n")) {
@@ -327,13 +341,35 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         environmentStatus.putAll(power);
     }
 
-    private void extractPortData(LinkedHashMap<String, String> ports, String portsData){
+    private void extractPortStatus(Map<String, String> ports, String portsData){
         Arrays.stream(portsData.split("\r")).forEach(portDataLine -> {
             if(portDataLine.matches("^(\n)*\\d\\/\\d\\/\\d.+?")) {
                 String[] portDataArray = portDataLine.split("  ");
                 List<String> portDataList = Arrays.stream(portDataArray).filter(portColumnData -> !portColumnData.isEmpty()).collect(Collectors.toList());
 
                 ports.put(portDataList.get(0).replace("\n", ""), String.valueOf(portDataLine.contains(" Up ")));
+            }
+        });
+    }
+
+    /*
+    * 0 - port
+    * 1 - bytes tx
+    * 2 - bytes rx
+    * 3 - total packets transmitted without errors
+    * 4 - total packets received without errors
+    * 5 - pause tx
+    * 6 - pause rx
+    * 7 - discarted tx
+    * 8 - discarted rx
+    * */
+    private void extractPortStatistics(Map<String, String> ports, String portsData){
+        Arrays.stream(portsData.split("\r")).forEach(portDataLine -> {
+            if(portDataLine.matches("^(\n)*\\d\\/\\d\\/\\d.+?")) {
+                String[] portDataArray = portDataLine.split("  ");
+                List<String> portDataList = Arrays.stream(portDataArray).filter(portColumnData -> !portColumnData.isEmpty()).collect(Collectors.toList());
+                ports.put("Ports Packets Statistics#Port " + portDataList.get(0) + " Received" , portDataList.get(4));
+                ports.put("Ports Packets Statistics#Port " + portDataList.get(0) + " Transmitted" , portDataList.get(3));
             }
         });
     }
