@@ -23,7 +23,11 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     private static final String TELNET_STACK_RELOAD_PROMPT = "Are you sure you want to reload the stack? (y/n) ";
 
     private ReentrantLock telnetOperationsLock = new ReentrantLock();
+    private boolean isOccupiedByControl = false;
     private boolean isInReboot = false;
+    ExtendedStatistics localStatistics;
+
+    ScheduledExecutorService statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
 
     /*
     *
@@ -41,8 +45,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     /**/
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
-        logger.debug("NetGearCommunicator: Received controllable property " + controllableProperty.getProperty() + " " + controllableProperty.getValue());
-
         if(isInReboot){
             logger.debug( "NetGearCommunicator: Device is in reboot state, skipping control command received.");
             return;
@@ -62,7 +64,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                 scheduleRebootRecovery();
                 logger.debug("NetGearCommunicator: Device has entered the reboot state.");
             } else if (property.startsWith("Port")) {
-
                 String portName = property.replaceAll("[^\\d.^\\/]", "");;
                 switch (value){
                     case "1":
@@ -72,7 +73,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                         shutdownPortSequence(portName);
                         break;
                     default:
-                        logger.debug("NetGearCommunicator: Unexpected control value " + value + " for the port " + portName);
+                        logger.warn("NetGearCommunicator: Unexpected control value " + value + " for the port " + portName);
                         break;
                 }
 
@@ -87,20 +88,13 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
     /**/
     private void scheduleRebootRecovery(){
-        logger.debug("NetGearCommunicator: Scheduled device reboot recovery");
         ScheduledExecutorService localExecutor = Executors.newSingleThreadScheduledExecutor();
         TaskScheduler rebootRecoveryScheduler = new ConcurrentTaskScheduler((localExecutor));
 
         Calendar date = Calendar.getInstance();
         long currentTime = date.getTimeInMillis();
 
-        rebootRecoveryScheduler.schedule(this::recoverFromReboot, new Date(currentTime + 60000 * 3));
-    }
-
-    /**/
-    private void recoverFromReboot(){
-        logger.debug("NetGearCommunicator: Device is recovered from the reboot");
-        isInReboot = false;
+        rebootRecoveryScheduler.schedule(() -> isInReboot = false, new Date(currentTime + 60000 * 3));
     }
 
     /**/
@@ -154,12 +148,14 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     /**/
     @Override
     public List<Statistics> getMultipleStatistics() throws Exception {
-        long startTime = System.currentTimeMillis();
         ExtendedStatistics statistics = new ExtendedStatistics();
 
         if(isInReboot){
-            logger.debug( "NetGearCommunicator: Device is in reboot. Skipping statistics refresh call.");
+            logger.info( "NetGearCommunicator: Device is in reboot. Skipping statistics refresh call.");
             return Collections.singletonList(statistics);
+        }
+        if(isOccupiedByControl && localStatistics != null){
+            return Collections.singletonList(localStatistics);
         }
 
         LinkedHashMap<String, String> statisticsMap = new LinkedHashMap<>();
@@ -210,8 +206,9 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         } finally {
             destroyChannel();
             telnetOperationsLock.unlock();
-            logger.debug("NetGear collecting statistics is completed in " + (System.currentTimeMillis() - startTime));
         }
+        localStatistics = statistics;
+
         return Collections.singletonList(statistics);
     }
 
@@ -245,7 +242,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                 if (response.endsWith(TELNET_UNSAVED_CHANGES_PROMPT)) {
                     internalSend("y\nreload\ny");
                 } else if (response.endsWith(TELNET_STACK_RELOAD_PROMPT)) {
-                    logger.debug("NetGearCommunicator: Reload action requested");
                     internalSend("y");
                 }
             } catch (Exception e) {
@@ -260,13 +256,31 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     }
 
     private void shutdownPortSequence(String portName) throws Exception {
+        portControlWarmup();
         enableTelnet();
         internalSend("config\ninterface " + portName + "\nshutdown");
+        localStatistics.getStatistics().put("Port Controls#Port " + portName, "false");
+        portControlCooldown();
     }
 
     private void startupPortSequence(String portName) throws Exception {
+        portControlWarmup();
         enableTelnet();
         internalSend("config\ninterface " + portName + "\nno shutdown");
+        localStatistics.getStatistics().put("Port Controls#Port " + portName, "true");
+        portControlCooldown();
+    }
+
+    private void portControlCooldown(){
+        statisticsExclusionScheduler.schedule(() -> isOccupiedByControl = false, 3000, TimeUnit.MILLISECONDS);
+    }
+
+    private void portControlWarmup(){
+        if(statisticsExclusionScheduler != null) {
+            statisticsExclusionScheduler.shutdownNow();
+        }
+        isOccupiedByControl = true;
+        statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
     }
 
     private String fetchPaginatedResponse(String command) throws Exception {
@@ -330,7 +344,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                         power.put("Power Modules#Power supply " + sensorLine[1] + ", " + sensorLine[2], sensorLine[3] + ", " + sensorLine[4]);
                         break;
                     default:
-                        logger.debug("No sensor data in line " + s);
+                        logger.info("No sensor data in line " + s);
                         break;
                 }
             }
