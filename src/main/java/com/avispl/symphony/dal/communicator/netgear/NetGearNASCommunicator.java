@@ -23,6 +23,9 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     private static final String TELNET_UNSAVED_CHANGES_PROMPT = "Would you like to save them now? (y/n) ";
     private static final String TELNET_STACK_RELOAD_PROMPT = "Are you sure you want to reload the stack? (y/n) ";
     private static final long reloadGracePeriod = 180000;
+    private static final int controlTelnetTimeout = 3000;
+    private static final int statisticsTelnetTimeout = 30000;
+
     private boolean isOccupiedByControl = false;
     private boolean isInReboot = false;
 
@@ -51,7 +54,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
         telnetOperationsLock.lock();
         try {
-            this.timeout = 3000;
+            this.timeout = controlTelnetTimeout;
             if(!enableTelnet()){
                 return;
             }
@@ -75,7 +78,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                 logger.info("NetGearCommunicator: Command " + property + " is not implemented. Skipping.");
             }
         } finally {
-            this.timeout = 30000;
+            this.timeout = statisticsTelnetTimeout;
             telnetOperationsLock.unlock();
         }
     }
