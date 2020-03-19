@@ -1,6 +1,7 @@
 package com.avispl.symphony.dal.communicator.netgear;
 
 import com.avispl.symphony.api.dal.control.Controller;
+import com.avispl.symphony.api.dal.dto.control.AdvancedControllableProperty;
 import com.avispl.symphony.api.dal.dto.control.ControllableProperty;
 import com.avispl.symphony.api.dal.dto.monitor.ExtendedStatistics;
 import com.avispl.symphony.api.dal.dto.monitor.Statistics;
@@ -21,13 +22,13 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
     private static final String TELNET_UNSAVED_CHANGES_PROMPT = "Would you like to save them now? (y/n) ";
     private static final String TELNET_STACK_RELOAD_PROMPT = "Are you sure you want to reload the stack? (y/n) ";
-
-    private ReentrantLock telnetOperationsLock = new ReentrantLock();
+    private static final long reloadGracePeriod = 180000;
     private boolean isOccupiedByControl = false;
     private boolean isInReboot = false;
-    ExtendedStatistics localStatistics;
 
-    ScheduledExecutorService statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
+    private ReentrantLock telnetOperationsLock = new ReentrantLock();
+    private ScheduledExecutorService statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
+    private ExtendedStatistics localStatistics;
 
     /*
     *
@@ -45,24 +46,18 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     /**/
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
-        if(isInReboot){
-            logger.debug( "NetGearCommunicator: Device is in reboot state, skipping control command received.");
-            return;
-        }
-
         String property = controllableProperty.getProperty();
         String value = String.valueOf(controllableProperty.getValue());
 
         telnetOperationsLock.lock();
-        if(!enableTelnet()){
-            return;
-        }
         try {
+            this.timeout = 3000;
+            if(!enableTelnet()){
+                return;
+            }
+
             if (property.equals("Reload")) {
                 reloadStack();
-                isInReboot = true;
-                scheduleRebootRecovery();
-                logger.debug("NetGearCommunicator: Device has entered the reboot state.");
             } else if (property.startsWith("Port")) {
                 String portName = property.replaceAll("[^\\d.^\\/]", "");;
                 switch (value){
@@ -76,12 +71,11 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
                         logger.warn("NetGearCommunicator: Unexpected control value " + value + " for the port " + portName);
                         break;
                 }
-
             } else {
                 logger.info("NetGearCommunicator: Command " + property + " is not implemented. Skipping.");
             }
         } finally {
-            destroyChannel();
+            this.timeout = 30000;
             telnetOperationsLock.unlock();
         }
     }
@@ -94,7 +88,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         Calendar date = Calendar.getInstance();
         long currentTime = date.getTimeInMillis();
 
-        rebootRecoveryScheduler.schedule(() -> isInReboot = false, new Date(currentTime + 60000 * 3));
+        rebootRecoveryScheduler.schedule(() -> isInReboot = false, new Date(currentTime + reloadGracePeriod));
     }
 
     /**/
@@ -128,7 +122,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         }
     }
 
-    /**/
     private String requestAuthenticationRefresh(String response) throws Exception {
         if(response.endsWith("Password:")){
             return internalSend(getPassword());
@@ -136,25 +129,14 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return response;
     }
 
-    /**/
-    @Override
-    public int ping() throws Exception {
-        if(isInReboot){
-            return getPingTimeout();
-        }
-        return super.ping();
-    }
-
-    /**/
     @Override
     public List<Statistics> getMultipleStatistics() throws Exception {
         ExtendedStatistics statistics = new ExtendedStatistics();
 
-        if(isInReboot){
-            logger.info( "NetGearCommunicator: Device is in reboot. Skipping statistics refresh call.");
-            return Collections.singletonList(statistics);
-        }
-        if(isOccupiedByControl && localStatistics != null){
+        if(isInReboot || (isOccupiedByControl && localStatistics != null)){
+            if(logger.isInfoEnabled()) {
+                logger.info("NetGearCommunicator: Device is in reboot or occupied. Skipping statistics refresh call.");
+            }
             return Collections.singletonList(localStatistics);
         }
 
@@ -194,8 +176,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             Map<String, String> environmentStatus = new HashMap<>();
             extractEnvironmentStatus(environmentStatus, environmentData);
 
-            portControls.putAll(createControls());
-            portControlledProperties.putAll(createControls());
+            portControlledProperties.put("Reload", "");
 
             statisticsMap.putAll(environmentStatus);
             statisticsMap.putAll(portControlledProperties);
@@ -203,6 +184,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             statisticsMap.putAll(packetsData);
             statistics.setStatistics(statisticsMap);
             statistics.setControl(portControls);
+            statistics.setControllableProperties(createAdvancedControls());
         } finally {
             destroyChannel();
             telnetOperationsLock.unlock();
@@ -235,24 +217,28 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     }
 
     private void reloadStack() {
-        ScheduledExecutorService localExecutor = Executors.newScheduledThreadPool(2);
-        localExecutor.execute(() -> {
-            try {
-                String response = internalSend("reload");
-                if (response.endsWith(TELNET_UNSAVED_CHANGES_PROMPT)) {
-                    internalSend("y\nreload\ny");
-                } else if (response.endsWith(TELNET_STACK_RELOAD_PROMPT)) {
-                    internalSend("y");
-                }
-            } catch (Exception e) {
+        try {
+            String response = internalSend("reload");
+            if (response.endsWith(TELNET_UNSAVED_CHANGES_PROMPT)) {
+                internalSend("y\nreload\ny");
+                isInReboot = true;
+            } else if (response.endsWith(TELNET_STACK_RELOAD_PROMPT)) {
+                internalSend("y");
+                isInReboot = true;
+            }
+        } catch (Exception e) {
+            isInReboot = false;
+            if(logger.isErrorEnabled()) {
                 logger.error("NetGearCommunicator: Error while reloading stack: " + e.getMessage());
             }
-        });
-
-        localExecutor.schedule(() -> {
-            logger.debug("NetGearCommunicator: Reload action interrupted due to the 5000ms threshold (telnet connection is frozen)");
-            localExecutor.shutdownNow();
-        }, 5000, TimeUnit.MILLISECONDS);
+        } finally {
+            if(logger.isInfoEnabled()) {
+                logger.info("NetGearCommunicator: Exited the reload with timeout: " + this.timeout);
+            }
+            if(isInReboot){
+                scheduleRebootRecovery();
+            }
+        }
     }
 
     private void shutdownPortSequence(String portName) throws Exception {
@@ -300,10 +286,15 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return telnetResponseStringBuilder.append(response).toString();
     }
 
-    private Map<String, String> createControls(){
-        Map<String, String> controls = new HashMap<>();
-        controls.put("Reload", "Push");
-        return controls;
+    private List<AdvancedControllableProperty> createAdvancedControls(){
+        AdvancedControllableProperty reloadButton = new AdvancedControllableProperty();
+        AdvancedControllableProperty.Button button = new AdvancedControllableProperty.Button();
+        button.setGracePeriod(reloadGracePeriod);
+        button.setLabel("Reload");
+        button.setLabelPressed("Reloading");
+        reloadButton.setType(button);
+        reloadButton.setName("Reload");
+        return Collections.singletonList(reloadButton);
     }
 
     private void generatePortControls(Map<String, String> portControls, Map<String, String> portsMap){
