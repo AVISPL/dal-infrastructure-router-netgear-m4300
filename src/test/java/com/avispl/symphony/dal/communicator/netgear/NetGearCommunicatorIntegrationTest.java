@@ -28,26 +28,35 @@ public class NetGearCommunicatorIntegrationTest {
 
     @Test
     public void getMultipleStatistics() throws Exception {
+        long startTime = System.currentTimeMillis();
         List<Statistics> stat = netGearCommunicator.getMultipleStatistics();
+        long endTime = System.currentTimeMillis();
         Assert.assertFalse(stat.isEmpty());
+        long diff = endTime - startTime;
+        Assert.assertFalse(((ExtendedStatistics)stat.get(0)).getStatistics().isEmpty());
+        Assert.assertFalse(((ExtendedStatistics)stat.get(0)).getControl().isEmpty());
+        Assert.assertEquals("Up", ((ExtendedStatistics)stat.get(0)).getStatistics().get("IPv4 Interface Status"));
+        Assert.assertEquals("Push", ((ExtendedStatistics)stat.get(0)).getStatistics().get("Reload"));
+        Assert.assertEquals("Push", ((ExtendedStatistics)stat.get(0)).getControl().get("Reload"));
+        Assert.assertEquals("Toggle", ((ExtendedStatistics)stat.get(0)).getControl().get("Port Controls#Port 1/0/1"));
     }
 
     @Test
     public void controlPropertyStartupPort() throws Exception {
         ControllableProperty controllableProperty = new ControllableProperty();
-        controllableProperty.setProperty("Port 1/0/1");
+        controllableProperty.setProperty("Port Controls#Port 1/0/1");
         controllableProperty.setValue("1");
         netGearCommunicator.controlProperty(controllableProperty);
-        Assert.assertEquals(((ExtendedStatistics)netGearCommunicator.getMultipleStatistics().get(0)).getStatistics().get("Port 1/0/1"), "true");
+        Assert.assertEquals(((ExtendedStatistics)netGearCommunicator.getMultipleStatistics().get(0)).getStatistics().get("Port Controls#Port 1/0/1"), "true");
     }
 
     @Test
     public void controlPropertyShutdownPort() throws Exception {
         ControllableProperty controllableProperty = new ControllableProperty();
-        controllableProperty.setProperty("Port 1/0/1");
+        controllableProperty.setProperty("Port Controls#Port 1/0/1");
         controllableProperty.setValue("0");
         netGearCommunicator.controlProperty(controllableProperty);
-        Assert.assertEquals(((ExtendedStatistics)netGearCommunicator.getMultipleStatistics().get(0)).getStatistics().get("Port 1/0/1"), "false");
+        Assert.assertEquals(((ExtendedStatistics)netGearCommunicator.getMultipleStatistics().get(0)).getStatistics().get("Port Controls#Port 1/0/1"), "false");
     }
 
     @Test
