@@ -170,9 +170,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             Map<String, String> interfacesData = new HashMap<>();
             fetchInterfaceData(interfacesData, interfacesPacketData);
 
-            Map<String, String> portControls = new HashMap<>();
-            generatePortControls(portControls, activePortData);
-
             Map<String, String> portControlledProperties = new HashMap<>();
             generatePortControlledProperties(portControlledProperties, activePortData);
 
@@ -186,8 +183,8 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             statisticsMap.putAll(interfacesData);
             statisticsMap.putAll(packetsData);
             statistics.setStatistics(statisticsMap);
-            statistics.setControl(portControls);
-            statistics.setControllableProperties(createAdvancedControls());
+
+            statistics.setControllableProperties(createAdvancedControls(activePortData));
         } finally {
             destroyChannel();
             telnetOperationsLock.unlock();
@@ -289,7 +286,9 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return telnetResponseStringBuilder.append(response).toString();
     }
 
-    private List<AdvancedControllableProperty> createAdvancedControls(){
+    private List<AdvancedControllableProperty> createAdvancedControls(Map<String, String> portsMap){
+        List<AdvancedControllableProperty> portControls = new ArrayList<>();
+
         AdvancedControllableProperty reloadButton = new AdvancedControllableProperty();
         AdvancedControllableProperty.Button button = new AdvancedControllableProperty.Button();
         button.setGracePeriod(reloadGracePeriod);
@@ -297,11 +296,17 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         button.setLabelPressed("Reloading");
         reloadButton.setType(button);
         reloadButton.setName("Reload");
-        return Collections.singletonList(reloadButton);
-    }
 
-    private void generatePortControls(Map<String, String> portControls, Map<String, String> portsMap){
-        portsMap.keySet().forEach(s -> portControls.put("Port Controls#Port " + s, "Toggle"));
+        portsMap.keySet().forEach(s ->
+        {
+            AdvancedControllableProperty.Switch portSwitch = new AdvancedControllableProperty.Switch();
+            portSwitch.setLabelOn("On");
+            portSwitch.setLabelOff("Off");
+            AdvancedControllableProperty portControl = new AdvancedControllableProperty("Port Controls#Port " + s, new Date(), portSwitch, portsMap.get(s));
+            portControls.add(portControl);
+        });
+        portControls.add(reloadButton);
+        return portControls;
     }
 
     private void generatePortControlledProperties(Map<String, String> portControls, Map<String, String> portsMap){
