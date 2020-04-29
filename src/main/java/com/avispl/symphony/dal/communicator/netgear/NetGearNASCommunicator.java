@@ -24,9 +24,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
     private ReentrantLock telnetOperationsLock = new ReentrantLock();
     private boolean isInReboot = false;
-    /*
-    *
-    * */
+
     public NetGearNASCommunicator(){
         super();
         this.setLoginPrompt("User:");
@@ -37,7 +35,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         this.setOptionHandlers(Collections.singletonList(new EchoOptionHandler(true, true, true ,false)));
     }
 
-    /**/
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
         logger.debug("NetGearCommunicator: Received controllable property " + controllableProperty.getProperty() + " " + controllableProperty.getValue());
@@ -83,7 +80,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         }
     }
 
-    /**/
     private void scheduleRebootRecovery(){
         logger.debug("NetGearCommunicator: Scheduled device reboot recovery");
         ScheduledExecutorService localExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -95,13 +91,11 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         rebootRecoveryScheduler.schedule(this::recoverFromReboot, new Date(currentTime + 60000 * 3));
     }
 
-    /**/
     private void recoverFromReboot(){
         logger.debug("NetGearCommunicator: Device is recovered from the reboot");
         isInReboot = false;
     }
 
-    /**/
     @Override
     public void controlProperties(List<ControllableProperty> controllablePropertyList) throws Exception {
         if (CollectionUtils.isEmpty(controllablePropertyList)) {
@@ -113,7 +107,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         }
     }
 
-    /**/
     private boolean enableTelnet() throws Exception {
         refreshTelnet();
         String response = internalSend("en");
@@ -125,14 +118,12 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return telnetEnabled;
     }
 
-    /**/
     private void refreshTelnet() throws Exception {
         if(!isChannelConnected()){
             createChannel();
         }
     }
 
-    /**/
     private String requestAuthenticationRefresh(String response) throws Exception {
         if(response.endsWith("Password:")){
             return internalSend(getPassword());
@@ -140,7 +131,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return response;
     }
 
-    /**/
     @Override
     public int ping() throws Exception {
         if(isInReboot){
@@ -149,7 +139,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return super.ping();
     }
 
-    /**/
     @Override
     public List<Statistics> getMultipleStatistics() throws Exception {
         ExtendedStatistics statistics = new ExtendedStatistics();
