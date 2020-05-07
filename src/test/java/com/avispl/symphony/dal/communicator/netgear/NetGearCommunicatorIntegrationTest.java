@@ -32,17 +32,17 @@ public class NetGearCommunicatorIntegrationTest {
         List<Statistics> stat = netGearCommunicator.getMultipleStatistics();
         long endTime = System.currentTimeMillis();
         Assert.assertFalse(stat.isEmpty());
-        long diff = endTime - startTime;
         Assert.assertFalse(((ExtendedStatistics)stat.get(0)).getStatistics().isEmpty());
-        Assert.assertFalse(((ExtendedStatistics)stat.get(0)).getControl().isEmpty());
+        Assert.assertFalse(((ExtendedStatistics)stat.get(0)).getControllableProperties().isEmpty());
         Assert.assertEquals("Up", ((ExtendedStatistics)stat.get(0)).getStatistics().get("IPv4 Interface Status"));
-        Assert.assertEquals("Push", ((ExtendedStatistics)stat.get(0)).getStatistics().get("Reload"));
-        Assert.assertEquals("Push", ((ExtendedStatistics)stat.get(0)).getControl().get("Reload"));
-        Assert.assertEquals("Toggle", ((ExtendedStatistics)stat.get(0)).getControl().get("Port Controls#Port 1/0/1"));
+        Assert.assertEquals("", ((ExtendedStatistics)stat.get(0)).getStatistics().get("Reload"));
+        Assert.assertTrue(((ExtendedStatistics)stat.get(0)).getControllableProperties().get(0).getName().contains("Port Controls#Port"));
     }
 
     @Test
     public void controlPropertyStartupPort() throws Exception {
+        netGearCommunicator.getMultipleStatistics();
+
         ControllableProperty controllableProperty = new ControllableProperty();
         controllableProperty.setProperty("Port Controls#Port 1/0/1");
         controllableProperty.setValue("1");
@@ -52,6 +52,8 @@ public class NetGearCommunicatorIntegrationTest {
 
     @Test
     public void controlPropertyShutdownPort() throws Exception {
+        netGearCommunicator.getMultipleStatistics();
+
         ControllableProperty controllableProperty = new ControllableProperty();
         controllableProperty.setProperty("Port Controls#Port 1/0/1");
         controllableProperty.setValue("0");
