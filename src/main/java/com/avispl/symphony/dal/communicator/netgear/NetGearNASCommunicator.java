@@ -1,3 +1,6 @@
+/*
+ * Copyright (c) 2020 AVI-SPL Inc. All Rights Reserved.
+ */
 package com.avispl.symphony.dal.communicator.netgear;
 
 import com.avispl.symphony.api.dal.control.Controller;
@@ -8,8 +11,6 @@ import com.avispl.symphony.api.dal.dto.monitor.Statistics;
 import com.avispl.symphony.api.dal.monitor.Monitorable;
 import com.avispl.symphony.dal.communicator.TelnetCommunicator;
 import org.apache.commons.net.telnet.EchoOptionHandler;
-import org.springframework.scheduling.TaskScheduler;
-import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.util.CollectionUtils;
 
 import java.util.*;
@@ -26,16 +27,12 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     private static final int controlTelnetTimeout = 3000;
     private static final int statisticsTelnetTimeout = 30000;
 
-    private boolean isOccupiedByControl = false;
-    private boolean isInReboot = false;
+    private volatile boolean isOccupiedByControl = false;
 
     private ReentrantLock telnetOperationsLock = new ReentrantLock();
     private ScheduledExecutorService statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
     private ExtendedStatistics localStatistics;
 
-    /*
-    *
-    * */
     public NetGearNASCommunicator(){
         super();
         this.setLoginPrompt("User:");
@@ -46,14 +43,16 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         this.setOptionHandlers(Collections.singletonList(new EchoOptionHandler(true, true, true ,false)));
     }
 
-    /**/
+    /**
+     * Controls NetGear switch by implementing Stack Reload functionality and PoE ports startup/shutdown
+     */
     @Override
     public void controlProperty(ControllableProperty controllableProperty) throws Exception {
         String property = controllableProperty.getProperty();
         String value = String.valueOf(controllableProperty.getValue());
 
-        telnetOperationsLock.lock();
         try {
+            telnetOperationsLock.lock();
             this.timeout = controlTelnetTimeout;
             if(!enableTelnet()){
                 return;
@@ -83,18 +82,6 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         }
     }
 
-    /**/
-    private void scheduleRebootRecovery(){
-        ScheduledExecutorService localExecutor = Executors.newSingleThreadScheduledExecutor();
-        TaskScheduler rebootRecoveryScheduler = new ConcurrentTaskScheduler((localExecutor));
-
-        Calendar date = Calendar.getInstance();
-        long currentTime = date.getTimeInMillis();
-
-        rebootRecoveryScheduler.schedule(() -> isInReboot = false, new Date(currentTime + reloadGracePeriod));
-    }
-
-    /**/
     @Override
     public void controlProperties(List<ControllableProperty> controllablePropertyList) throws Exception {
         if (CollectionUtils.isEmpty(controllablePropertyList)) {
@@ -106,11 +93,15 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         }
     }
 
-    /**/
+    /**
+     * Enters the "enabled" mode, creates a channel if needed
+     *
+     * @return boolean value, indicating whether telnet has entered the enabled mode successfully
+     */
     private boolean enableTelnet() throws Exception {
         refreshTelnet();
         String response = internalSend("en");
-        boolean telnetEnabled = requestAuthenticationRefresh(response).endsWith("#");
+        boolean telnetEnabled = authenticationRefresh(response).endsWith("#");
 
         if(!telnetEnabled){
             logger.error("NetGearCommunicator: Telnet connection to " + host + " cannot be established");
@@ -118,15 +109,24 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return telnetEnabled;
     }
 
-    /**/
+    /**
+     * Refreshes telnet status, creates a channel if no channel is connected at the moment
+     */
     private void refreshTelnet() throws Exception {
         if(!isChannelConnected()){
             createChannel();
         }
     }
 
-    /**/
-    private String requestAuthenticationRefresh(String response) throws Exception {
+    /**
+     * Refreshes authentication with a given password, based on a previous response (since we may receive a password
+     * prompt outside of the "login" sequence, but just because we are requesting specific protected pieces of the
+     * data/functionality)
+     *
+     * @param response telnet response to check for the prompt before sending the password
+     * @return either the password input response or the input string.
+     */
+    private String authenticationRefresh(String response) throws Exception {
         if(response.endsWith("Password:")){
             return internalSend(getPassword());
         }
@@ -137,11 +137,13 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     public List<Statistics> getMultipleStatistics() throws Exception {
         ExtendedStatistics statistics = new ExtendedStatistics();
 
-        if(isInReboot || (isOccupiedByControl && localStatistics != null)){
+        if(isOccupiedByControl && localStatistics != null){
             if(logger.isInfoEnabled()) {
                 logger.info("NetGearCommunicator: Device is in reboot or occupied. Skipping statistics refresh call.");
             }
-            return Collections.singletonList(localStatistics);
+            statistics.setStatistics(localStatistics.getStatistics());
+            statistics.setControllableProperties(localStatistics.getControllableProperties());
+            return Collections.singletonList(statistics);
         }
 
         LinkedHashMap<String, String> statisticsMap = new LinkedHashMap<>();
@@ -149,7 +151,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         try {
             telnetOperationsLock.lock();
             if(!enableTelnet()){
-                return Collections.emptyList();
+                throw new RuntimeException("Unable to establish a telnet communication session");
             }
 
             String ipManagementData = internalSend("show ip management");
@@ -169,7 +171,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             extractGeneralPacketsData(packetsData, interfaceSwitchport);
 
             Map<String, String> interfacesData = new HashMap<>();
-            fetchInterfaceData(interfacesData, interfacesPacketData);
+            extractPortStatistics(interfacesData, interfacesPacketData);
 
             Map<String, String> portControlledProperties = new HashMap<>();
             generatePortControlledProperties(portControlledProperties, activePortData);
@@ -195,6 +197,12 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return Collections.singletonList(statistics);
     }
 
+    /**
+     * Extracts general packets statistics for the switch.
+     *
+     * @param interfaceSwitchport telnet response to extract values from
+     * @param packetsData statistics map to extract values to
+     */
     private void extractGeneralPacketsData(Map<String, String> packetsData, String interfaceSwitchport) {
         Map<String, String> result = extractTelnetResponseProperties(interfaceSwitchport, "\\.{2,}");
         packetsData.put("TotalPacketsStatistics#Total Packets Received Without Errors", result.get("Packets Received Without Error"));
@@ -204,31 +212,18 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         packetsData.put("TotalPacketsStatistics#Time Since Counters Last Cleared", result.get("Time Since Counters Last Cleared"));
     }
 
-    private void fetchInterfaceData(Map<String, String> interfacesData, String packetsData) throws Exception {
-        extractPortStatistics(interfacesData, packetsData);
-
-//        for(String s : interfaceIds){
-//            String interfaceResponse = internalSend("show interface " + s + "\nshow ip interface " + s);
-//            Map<String, String> interfaceResponseProperties = extractTelnetResponseProperties(interfaceResponse, "\\.{2,}");
-//
-//            interfacesData.put("Packet Success#Port " + s, interfaceResponseProperties.get("Packets Received Without Error"));
-//            interfacesData.put("Packet Loss#Port " + s, interfaceResponseProperties.get("Packets Received With Error"));
-//            interfacesData.put("Packet Bandwidth#Port " + s, interfaceResponseProperties.get("Bandwidth"));
-//        }
-    }
-
+    /**
+     * Reloads the entire NetGear stack.
+     */
     private void reloadStack() {
         try {
             String response = internalSend("reload");
             if (response.endsWith(TELNET_UNSAVED_CHANGES_PROMPT)) {
                 internalSend("y\nreload\ny");
-                isInReboot = true;
             } else if (response.endsWith(TELNET_STACK_RELOAD_PROMPT)) {
                 internalSend("y");
-                isInReboot = true;
             }
         } catch (Exception e) {
-            isInReboot = false;
             if(logger.isErrorEnabled()) {
                 logger.error("NetGearCommunicator: Error while reloading stack: " + e.getMessage());
             }
@@ -236,12 +231,13 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             if(logger.isInfoEnabled()) {
                 logger.info("NetGearCommunicator: Exited the reload with timeout: " + this.timeout);
             }
-            if(isInReboot){
-                scheduleRebootRecovery();
-            }
         }
     }
 
+    /**
+     * Shutdown PoE port
+     * @param portName name of the port to shutdown
+     */
     private void shutdownPortSequence(String portName) throws Exception {
         portControlWarmup();
         enableTelnet();
@@ -250,6 +246,10 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         portControlCooldown();
     }
 
+    /**
+     * Startup PoE port
+     * @param portName name of the port to start up
+     */
     private void startupPortSequence(String portName) throws Exception {
         portControlWarmup();
         enableTelnet();
@@ -258,10 +258,24 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         portControlCooldown();
     }
 
+
+    /**
+     * Part of a port warmup-cooldown strategy. Schedules changing the adapter occupation status to "non occupied".
+     */
     private void portControlCooldown(){
         statisticsExclusionScheduler.schedule(() -> isOccupiedByControl = false, 3000, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * The switches that have that many controls share the similar issue - each control action by design will
+     * trigger a statistic retrieval. In order to stack multiple controls together - warmup/cooldown is applied to
+     * port controls. What this means is that whenever the control is toggled - first it lets Adapter know that
+     * it's currently occupied by a control, and the scheduler is initialized. After the control action is finished -
+     * port cooldown is initiated. It schedules changing occupation status back to "non occupied" after 3 seconds.
+     * If another control is triggered during that period - it resets the occupied action change until finished.
+     * This way, all the subsequent control actions will be stacked together without immediate statistics refresh
+     * after each of them.
+     */
     private void portControlWarmup(){
         if(statisticsExclusionScheduler != null) {
             statisticsExclusionScheduler.shutdownNow();
@@ -270,6 +284,13 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
     }
 
+    /**
+     * Collects the paginated telnet response.
+     * Sometimes the response may have a paginated responce which requires sending input programmatically to
+     * get the next page.
+     *
+     * @param command command to collect a response for
+     */
     private String fetchPaginatedResponse(String command) throws Exception {
         if(!enableTelnet()){
             return "";
@@ -282,11 +303,16 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             telnetResponseStringBuilder.append(response);
             response = internalSend("-");
         } while (!response.endsWith("#"));
-
-        destroyChannel();
         return telnetResponseStringBuilder.append(response).toString();
     }
 
+    /**
+     * Since {link#AdvancedControllableProperty} were presented in Symphony 4.9 - we need to create them
+     * properly. This method creates a Reload button control and a set of Port controls, that are represented
+     * by switch controls.
+     *
+     * @param portsMap map containing all the controls the switch has.
+     */
     private List<AdvancedControllableProperty> createAdvancedControls(Map<String, String> portsMap){
         List<AdvancedControllableProperty> portControls = new ArrayList<>();
 
@@ -310,10 +336,25 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         return portControls;
     }
 
+    /**
+     * In order to have controllable properties displayed on UI - we need to create a set of matching statistics
+     * entries in a statistics map. This metod is running through all the ports and created entries that would match
+     * (logically) the result of createAdvancedControls() method
+     *
+     * @param portControls statistics map to add entries to
+     * @param portsMap map containing ports information (Name/Status)
+     */
     private void generatePortControlledProperties(Map<String, String> portControls, Map<String, String> portsMap){
         portsMap.keySet().forEach(s -> portControls.put("Port Controls#Port " + s, portsMap.get(s)));
     }
 
+    /**
+     * Extract status of a NetGear environment, basically a set of telemetry - temperature, fans. Also contains information
+     * about the power supply.
+     *
+     * @param environmentData telnet response containing all the environment data
+     * @param environmentStatus statistics map to extract values to
+     */
     private void extractEnvironmentStatus(Map<String, String> environmentStatus, String environmentData){
         Map<String, String> temp = new HashMap<>();
         Map<String, String> fans = new HashMap<>();
@@ -355,6 +396,12 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         environmentStatus.putAll(power);
     }
 
+    /**
+     * Extracts ports statuses from the telnet response
+     *
+     * @param portsData telnet response
+     * @param ports statistics map to extract data to
+     */
     private void extractPortStatus(Map<String, String> ports, String portsData){
         Arrays.stream(portsData.split("\r")).forEach(portDataLine -> {
             if(portDataLine.matches("^(\n)*\\d\\/\\d\\/\\d.+?")) {
@@ -366,6 +413,12 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         });
     }
 
+    /**
+     * Extracts ports statistics from the telnet response
+     *
+     * @param portsData telnet response
+     * @param ports statistics map to extract data to
+     */
     private void extractPortStatistics(Map<String, String> ports, String portsData){
         Arrays.stream(portsData.split("\r")).forEach(portDataLine -> {
             if(portDataLine.matches("^(\n)*\\d\\/\\d\\/\\d.+?")) {
@@ -377,6 +430,15 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         });
     }
 
+    /**
+     * Transforms specific telnet responses into key:value data
+     *
+     * @param separatorPattern pattern that is used to define the separator between key and value, e.g
+     *                         Key...........Value - would have it "\\.{2,}", or Key__________Value
+     *                         would have it defined as "_{2,}" etc.
+     * @param response response to parse
+     * @return Map<String, String> that represents the parsed values
+     */
     private Map<String, String> extractTelnetResponseProperties(String response, String separatorPattern){
         String[] lines = response.split("\n");
         LinkedHashMap<String, String> responseMap = new LinkedHashMap<>();
