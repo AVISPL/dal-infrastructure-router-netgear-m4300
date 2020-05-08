@@ -29,7 +29,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
     private volatile boolean isOccupiedByControl = false;
 
-    private ReentrantLock telnetOperationsLock = new ReentrantLock();
+    private final ReentrantLock telnetOperationsLock = new ReentrantLock();
     private ScheduledExecutorService statisticsExclusionScheduler = Executors.newScheduledThreadPool(1);
     private ExtendedStatistics localStatistics;
 
@@ -51,8 +51,8 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
         String property = controllableProperty.getProperty();
         String value = String.valueOf(controllableProperty.getValue());
 
+        telnetOperationsLock.lock();
         try {
-            telnetOperationsLock.lock();
             this.timeout = controlTelnetTimeout;
             if(!enableTelnet()){
                 return;
@@ -114,7 +114,7 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
      */
     private void refreshTelnet() throws Exception {
         if(!isChannelConnected()){
-            createChannel();
+            connect();
         }
     }
 
@@ -148,8 +148,8 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
         LinkedHashMap<String, String> statisticsMap = new LinkedHashMap<>();
 
+        telnetOperationsLock.lock();
         try {
-            telnetOperationsLock.lock();
             if(!enableTelnet()){
                 throw new RuntimeException("Unable to establish a telnet communication session");
             }
@@ -189,8 +189,8 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
 
             statistics.setControllableProperties(createAdvancedControls(activePortData));
         } finally {
-            destroyChannel();
             telnetOperationsLock.unlock();
+            disconnect();
         }
         localStatistics = statistics;
 
