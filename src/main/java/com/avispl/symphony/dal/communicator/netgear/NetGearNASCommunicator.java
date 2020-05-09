@@ -137,19 +137,18 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
     public List<Statistics> getMultipleStatistics() throws Exception {
         ExtendedStatistics statistics = new ExtendedStatistics();
 
-        if(isOccupiedByControl && localStatistics != null){
-            if(logger.isInfoEnabled()) {
-                logger.info("NetGearCommunicator: Device is in reboot or occupied. Skipping statistics refresh call.");
-            }
-            statistics.setStatistics(localStatistics.getStatistics());
-            statistics.setControllableProperties(localStatistics.getControllableProperties());
-            return Collections.singletonList(statistics);
-        }
-
-        LinkedHashMap<String, String> statisticsMap = new LinkedHashMap<>();
-
         telnetOperationsLock.lock();
         try {
+            if(isOccupiedByControl && localStatistics != null){
+                if(logger.isInfoEnabled()) {
+                    logger.info("NetGearCommunicator: Device is in reboot or occupied. Skipping statistics refresh call.");
+                }
+                statistics.setStatistics(localStatistics.getStatistics());
+                statistics.setControllableProperties(localStatistics.getControllableProperties());
+                return Collections.singletonList(statistics);
+            }
+
+            LinkedHashMap<String, String> statisticsMap = new LinkedHashMap<>();
             if(!enableTelnet()){
                 throw new RuntimeException("Unable to establish a telnet communication session");
             }
@@ -188,11 +187,10 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             statistics.setStatistics(statisticsMap);
 
             statistics.setControllableProperties(createAdvancedControls(activePortData));
+            localStatistics = statistics;
         } finally {
             telnetOperationsLock.unlock();
-            disconnect();
         }
-        localStatistics = statistics;
 
         return Collections.singletonList(statistics);
     }
