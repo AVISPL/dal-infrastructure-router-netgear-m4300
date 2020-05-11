@@ -189,7 +189,11 @@ public class NetGearNASCommunicator extends TelnetCommunicator implements Monito
             statistics.setControllableProperties(createAdvancedControls(activePortData));
             localStatistics = statistics;
         } finally {
-            telnetOperationsLock.unlock();
+            try{
+                disconnect();
+            } finally {
+                telnetOperationsLock.unlock();
+            }
         }
 
         return Collections.singletonList(statistics);
