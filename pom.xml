@@ -209,7 +209,7 @@
         <dependency>
             <groupId>au.com.dius</groupId>
             <artifactId>pact-jvm-provider-junit5</artifactId>
-            <version>4.0.4</version>
+            <version>4.0.10</version>
         </dependency>
     </dependencies>
 </project>
