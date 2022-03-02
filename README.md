@@ -14,3 +14,7 @@ https://www.netgear.com/images/landings/proavm4300/M4300_Datasheet_28Nov18.pdf
 Information about CLI commands: 
 
 http://www.downloads.netgear.com/files/GDC/M4200/M4200-M4300_CLI_EN.pdf
+
+**Build project with no tests: ``` mvn clean install -DskipTests```**
+
+**Build project with all tests: ``` mvn clean install ```**
